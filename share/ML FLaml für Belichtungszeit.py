@@ -3,84 +3,140 @@ import numpy as np
 from flaml import AutoML
 from sklearn.model_selection import train_test_split
 import os
-
+import re
 # CSVs einlesen
 df_belichtung = pd.read_csv(r"C:\Users\Dahmen_P\PycharmProjects\Masterarbeit\.venv\belichtungszeit_nach_ID.csv")
 df_param = pd.read_csv(r"C:\Users\Dahmen_P\PycharmProjects\Masterarbeit\.venv\Rahmenparameter.csv")
 df_ergänzteparameter = pd.read_csv(r"C:\Users\Dahmen_P\PycharmProjects\Masterarbeit\.venv\Test speicher\trainingsdaten_inkl_neuer_vorschlaege.csv")
+
+# CSV-Dateien korrekt einlesen
+df_combined_results = pd.read_csv(
+    r"C:\Users\Dahmen_P\PycharmProjects\Masterarbeit\.venv\Parameter für PlasmaOS\combined_results.csv", sep=",", names=["test_point_id", "intensity", "Exposure [ms]"], header=0)
+
+df_neue_parameter = pd.read_csv(
+    r"C:\Users\Dahmen_P\PycharmProjects\Masterarbeit\.venv\Parameter für PlasmaOS\neue_Parameter_im_Richtigen_Format.csv", sep=";")
+
+# Entferne die alten Namensspalten
+df_neue_parameter= df_neue_parameter.drop(columns=["Test Point Name", "Name"], errors="ignore")
+
+# Neue test_point_id von 462 bis 511 (für 50 Einträge)
+df_neue_parameter["test_point_id"] = list(range(462, 462 + len(df_neue_parameter)))
+
+df_neue_parameter.head()
+
+# Entferne die Spalte aus neue_parameter vor dem Merge
+df_neue_parameter = df_neue_parameter.drop(columns=["Exposure [ms]"], errors="ignore")
+
+# Dann normal mergen
+df_merged2 = pd.merge(df_combined_results, df_neue_parameter, on="test_point_id", how="outer")
+
+# Temporär alle Spalten anzeigen
+#with pd.option_context('display.max_columns', None):
+    #print(df_merged2.head())
+
+
 # Mergen über die gemeinsame Spalte "Parameter_ID"
 df_merged = pd.merge(df_belichtung, df_param, on="Parameter_ID", how="inner")
+#print(df_merged.head(100))
 
-# Ergebnis anzeigen
-print(df_merged.head(100))
+df_merged_renamed = df_merged.rename(columns={
+    "Parameter_ID": "test_point_id",
+    "Belichtungszeit_ms": "Exposure [ms]",
+    "P_MW": "High Power [W]",  # oder "Low Power [W]" – je nach Bedeutung
+    "t_on": "Pulse-On [ms]",
+    "t_off": "Pulse-Off [ms]",
+    "p": "Pressure [Pa]",
+    "O2": "O2 [sccm]",
+    "HMDSO": "HMDSO [sccm]"
+})
+
+# Falls df_merged2 vorher eingelesen wurde:
+df_kombiniert = pd.concat([df_merged2, df_merged_renamed], ignore_index=True)
+
+with pd.option_context('display.max_columns', None):
+    print(df_kombiniert)
 
 # ❌ Falls du 'Parameter_ID' nicht fürs Training brauchst, entfernen:
-df_merged = df_merged.drop(columns=["Parameter_ID"], errors='ignore')
+df_kombiniert = df_kombiniert.drop(columns=["Low Power [W]","Parameter_ID","intensity","test_point_id","Coat Time [s]" , "Purge Time [s]","HMDSN [sccm]" ,  "C2H2 [sccm]","Ar [sccm]"], errors='ignore')
+with pd.option_context('display.max_columns',None, 'display.max_rows', None):
+    print(df_kombiniert)
+# ❗ Nur die für das Modell relevanten Spalten umbenennen
+df_kombiniert = df_kombiniert.rename(columns={
+    "High Power [W]": "P_MW",
+    "Pulse-On [ms]": "t_on",
+    "Pulse-Off [ms]": "t_off",
+    "Pressure [Pa]": "p",
+    "O2 [sccm]": "O2",
+    "HMDSO [sccm]": "HMDSO",
+    "Exposure [ms]": "Exposure_ms"
+})
+
+
 
 # Optional: Versuche, erweiterte Daten einzulesen (falls vorhanden)
-dateipfad_gesamt = "trainingsdaten_inkl_neuer_vorschlaege.csv"
-if os.path.exists(dateipfad_gesamt):
-    print("📂 Erweiterte Daten werden geladen...")
-    df_neu = pd.read_csv(dateipfad_gesamt)
-    df_merged = pd.concat([df_merged, df_neu], ignore_index=True).drop_duplicates()
-print(df_merged)
+##ateipfad_gesamt = "trainingsdaten_inkl_neuer_vorschlaege.csv"
+#if os.path.exists(dateipfad_gesamt):
+   # print("📂 Erweiterte Daten werden geladen...")
+    #df_neu = pd.read_csv(dateipfad_gesamt)
+    #df_merged = pd.concat([df_merged, df_neu], ignore_index=True).drop_duplicates()
+#print(df_merged)
 
 # ========================================
 # ✍️ Benutzerdefinierte Eingabe (parallel)
 # ========================================
-print("\n🆕 Möchtest du eigene Parameterkombinationen manuell eingeben?")
-manuell = input("➡️  Eingabe starten? (j/n): ")
+#print("\n🆕 Möchtest du eigene Parameterkombinationen manuell eingeben?")
+#manuell = input("➡️  Eingabe starten? (j/n): ")
 
-if manuell.lower() in ["j", "ja", "y", "yes"]:
+#if manuell.lower() in ["j", "ja", "y", "yes"]:
 
     # Funktion zur Eingabe & Umwandlung
-    def eingabe_liste(name):
-        werte = input(f"{name} (durch Komma getrennt, z. B. 500,600): ")
-        return [int(x.strip()) for x in werte.split(",")]
+   # def eingabe_liste(name):
+      #  werte = input(f"{name} (durch Komma getrennt, z. B. 500,600): ")
+       # return [int(x.strip()) for x in werte.split(",")]
 
-    print("\n🔢 Gib die Werte ein – alle Listen sollten gleich lang sein:")
+   # print("\n🔢 Gib die Werte ein – alle Listen sollten gleich lang sein:")
 
-    P_MW   = eingabe_liste("P_MW")
-    t_on   = eingabe_liste("t_on")
-    t_off  = eingabe_liste("t_off")
-    p      = eingabe_liste("p")
-    O2     = eingabe_liste("O2")
-    HMDSO  = eingabe_liste("HMDSO")
+#    P_MW   = eingabe_liste("P_MW")
+#    t_on   = eingabe_liste("t_on")
+ #   t_off  = eingabe_liste("t_off")
+  #  p      = eingabe_liste("p")
+   # O2     = eingabe_liste("O2")
+    #HMDSO  = eingabe_liste("HMDSO")
 
-    n_eintraege = len(P_MW)
-    if not all(len(lst) == n_eintraege for lst in [t_on, t_off, p, O2, HMDSO]):
-        print("❌ Fehler: Alle Eingabelisten müssen gleich viele Werte haben.")
-        exit()
+#    n_eintraege = len(P_MW)
+#    if not all(len(lst) == n_eintraege for lst in [t_on, t_off, p, O2, HMDSO]):
+ #       print("❌ Fehler: Alle Eingabelisten müssen gleich viele Werte haben.")
+#        exit()
 
     # Als DataFrame zusammenbauen
-    df_manuell = pd.DataFrame({
-        "P_MW": P_MW,
-        "t_on": t_on,
-        "t_off": t_off,
-        "p": p,
-        "O2": O2,
-        "HMDSO": HMDSO
-    })
+#    df_manuell = pd.DataFrame({
+ #       "P_MW": P_MW,
+#        "t_on": t_on,
+ #       "t_off": t_off,
+ #       "p": p,
+ #       "O2": O2,
+  #      "HMDSO": HMDSO
+ #   })
 
-    # Belichtungszeiten erfragen
-    bel = []
-    for i in range(n_eintraege):
-        print(f"\n📌 Parameterkombination {i+1}:\n{df_manuell.iloc[i].to_string()}")
-        while True:
-            wert = input("➡️  Gemessene Belichtungszeit in ms: ")
-            if wert.isdigit():
-                bel.append(int(wert))
-                break
-            else:
-                print("❌ Ungültige Eingabe. Bitte eine ganze Zahl eingeben.")
+ #   # Belichtungszeiten erfragen
+ #   bel = []
+ #   for i in range(n_eintraege):
+ #       print(f"\n📌 Parameterkombination {i+1}:\n{df_manuell.iloc[i].to_string()}")
+  #      while True:
+  #          wert = input("➡️  Gemessene Belichtungszeit in ms: ")
+  #          if wert.isdigit():
+ #               bel.append(int(wert))
+ #               break
+ #           else:
+ #               print("❌ Ungültige Eingabe. Bitte eine ganze Zahl eingeben.")
 
-    df_manuell["Belichtungszeit_ms"] = bel
+ #   df_manuell["Belichtungszeit_ms"] = bel
 
     # Anhängen an bestehenden Datensatz
-    gemeinsame_spalten = df_merged.columns.intersection(df_manuell.columns)
-    df_merged = pd.concat([df_merged[gemeinsame_spalten], df_manuell[gemeinsame_spalten]], ignore_index=True)
+ #   gemeinsame_spalten = df_merged.columns.intersection(df_manuell.columns)
+ #   df_merged = pd.concat([df_merged[gemeinsame_spalten], df_manuell[gemeinsame_spalten]], ignore_index=True)
 
-    print("\n✅ Eigene Parameterkombinationen wurden hinzugefügt.")
+  #  print("\n✅ Eigene Parameterkombinationen wurden hinzugefügt.")
 
 
 
@@ -88,13 +144,16 @@ if manuell.lower() in ["j", "ja", "y", "yes"]:
 # ========================
 # 🔁 Haupt-Loop starten
 # ========================
+# Spaltennamen in X „cleanen“ für LightGBM-Kompatibilität
+
 
 while True:
-    # Ziel definieren
-    ziel = "Belichtungszeit_ms"
-    X = df_merged.drop(columns=[ziel])
-    y = df_merged[ziel]
 
+    # Ziel definieren
+    ziel = "Exposure_ms"
+    X = df_kombiniert.drop(columns=[ziel])
+    y = df_kombiniert[ziel]
+    X.columns = [re.sub(r"[^0-9a-zA-Z_]", "_", col) for col in X.columns]
     # Train/test split
     X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=42)
 
@@ -104,7 +163,7 @@ while True:
         X_train=X_train,
         y_train=y_train,
         task="regression",
-        time_budget=300,
+        time_budget=50400,
         metric="mse",
         log_file_name="flaml.log",
     )
@@ -118,38 +177,28 @@ while True:
 
 
     # Neue zufällige Parameterwerte mit Schrittweiten erzeugen
-    def generate_random_values(min_val, max_val, step, size):
-        possible_vals = np.arange(min_val, max_val + 1, step)
-        return np.random.choice(possible_vals, size=size)
+    def generate_unique_samples(df_existing, n_samples):
+        param_cols = ["P_MW", "t_on", "t_off", "p", "O2", "HMDSO"]
+        steps = {"P_MW": 100, "t_on": 2, "t_off": 20, "p": 10, "O2": 60, "HMDSO": 4}
+        min_vals = {"P_MW": 500, "t_on": 3, "t_off": 30, "p": 5, "O2": 100, "HMDSO": 2}
+        max_vals = {"P_MW": 900, "t_on": 9, "t_off": 90, "p": 45, "O2": 400, "HMDSO": 20}
+
+        existing_keys = set(df_existing[param_cols].astype(str).agg("_".join, axis=1))
+
+        unique_rows = []
+        while len(unique_rows) < n_samples:
+            sample = {col: np.random.choice(np.arange(min_vals[col], max_vals[col] + 1, steps[col]))
+                      for col in param_cols}
+            key = "_".join(map(str, sample.values()))
+            if key not in existing_keys:
+                existing_keys.add(key)
+                unique_rows.append(sample)
+
+        return pd.DataFrame(unique_rows)
 
 
-    # Anzahl neuer Kombinationen
-    n_samples = 50
-    min_vals = {
-        "P_MW": 500,
-        "t_on": 3,
-        "t_off": 30,
-        "p": 5,
-        "O2": 100,
-        "HMDSO": 2
-    }
-    max_vals = {
-        "P_MW": 900,
-        "t_on": 9,
-        "t_off": 90,
-        "p": 45,
-        "O2": 400,
-        "HMDSO": 20
-    }
+    X_new = generate_unique_samples(df_kombiniert, 50)
 
-    X_new = pd.DataFrame({
-        "P_MW": generate_random_values(min_vals["P_MW"], max_vals["P_MW"], 100, n_samples),
-        "t_on": generate_random_values(min_vals["t_on"], max_vals["t_on"], 2, n_samples),
-        "t_off": generate_random_values(min_vals["t_off"], max_vals["t_off"], 20, n_samples),
-        "p": generate_random_values(min_vals["p"], max_vals["p"], 10, n_samples),
-        "O2": generate_random_values(min_vals["O2"], max_vals["O2"], 60, n_samples),
-        "HMDSO": generate_random_values(min_vals["HMDSO"], max_vals["HMDSO"], 4, n_samples),
-    })
 
     y_pred_new = automl.predict(X_new)
     y_pred_new = np.clip(y_pred_new, a_min=0, a_max=None)
@@ -159,7 +208,6 @@ while True:
     df_vorhersage["Vorhergesagte_Belichtungszeit_ms"] = y_pred_new
 
     print(df_vorhersage)
-
     # 📦 Formatieren für PlasmaOS CSV-Export
     df_export = pd.DataFrame({
         "Test Point Name": [f"V_{i + 1}" for i in range(len(df_vorhersage))],
@@ -209,9 +257,10 @@ while True:
     df_vorhersage["Belichtungszeit_ms"] = echte_zeiten
     df_vorhersage = df_vorhersage.drop(columns=["Vorhergesagte_Belichtungszeit_ms"], errors="ignore")
 
+    df_vorhersage.columns = [re.sub(r"[^0-9a-zA-Z_]", "_", col) for col in df_vorhersage.columns]
     # Zum Trainings-DataFrame hinzufügen
-    gemeinsame_spalten = df_merged.columns.intersection(df_vorhersage.columns)
-    df_merged = pd.concat([df_merged[gemeinsame_spalten], df_vorhersage[gemeinsame_spalten]], ignore_index=True)
+    gemeinsame_spalten = df_kombiniert.columns.intersection(df_vorhersage.columns)
+    df_kombiniert = pd.concat([df_kombiniert[gemeinsame_spalten], df_vorhersage[gemeinsame_spalten]], ignore_index=True)
 
     print("\n✅ Neue Parameterkombinationen wurden übernommen.")
 
